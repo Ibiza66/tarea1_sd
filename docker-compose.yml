@@ -1,0 +1,6 @@
+services:
+  response-generator:
+    build: .
+    container_name: response-generator
+    ports:
+      - "8001:8001"
