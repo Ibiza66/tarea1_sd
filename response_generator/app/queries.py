@@ -62,3 +62,33 @@ def q3_density(data, zone_id, confidence_min=0.0):
         "density_per_km2": round(density, 4),
         "cache_key": f"density:{zone_id}:conf={confidence_min}"
     }
+
+
+def q4_compare_density(data, zone_id_a, zone_id_b, confidence_min=0.0):
+    if zone_id_a not in data:
+        raise ValueError(f"Zona inválida: {zone_id_a}")
+    if zone_id_b not in data:
+        raise ValueError(f"Zona inválida: {zone_id_b}")
+
+    da = q3_density(data, zone_id_a, confidence_min)
+    db = q3_density(data, zone_id_b, confidence_min)
+
+    density_a = da["density_per_km2"]
+    density_b = db["density_per_km2"]
+
+    if density_a > density_b:
+        winner = zone_id_a
+    elif density_b > density_a:
+        winner = zone_id_b
+    else:
+        winner = "tie"
+
+    return {
+        "zone_id_a": zone_id_a,
+        "zone_id_b": zone_id_b,
+        "confidence_min": confidence_min,
+        "density_a": density_a,
+        "density_b": density_b,
+        "winner": winner,
+        "cache_key": f"compare:density:{zone_id_a}:{zone_id_b}:conf={confidence_min}"
+    }
