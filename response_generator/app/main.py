@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from .loader import load_data
-from .queries import q1_count, q2_area_stats
+from .queries import q1_count, q2_area_stats, q3_density
 
 app = FastAPI()
 
@@ -14,6 +14,11 @@ class Q1Request(BaseModel):
 
 
 class Q2Request(BaseModel):
+    zone_id: str
+    confidence_min: float = 0.0
+
+
+class Q3Request(BaseModel):
     zone_id: str
     confidence_min: float = 0.0
 
@@ -40,5 +45,13 @@ def run_q1(request: Q1Request):
 def run_q2(request: Q2Request):
     try:
         return q2_area_stats(DATA, request.zone_id, request.confidence_min)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/q3")
+def run_q3(request: Q3Request):
+    try:
+        return q3_density(DATA, request.zone_id, request.confidence_min)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
