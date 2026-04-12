@@ -92,3 +92,39 @@ def q4_compare_density(data, zone_id_a, zone_id_b, confidence_min=0.0):
         "winner": winner,
         "cache_key": f"compare:density:{zone_id_a}:{zone_id_b}:conf={confidence_min}"
     }
+
+
+def q5_confidence_dist(data, zone_id, bins=5):
+    if zone_id not in data:
+        raise ValueError(f"Zona inválida: {zone_id}")
+    if bins <= 0:
+        raise ValueError("bins debe ser mayor que 0")
+
+    scores = [b["confidence"] for b in data[zone_id]]
+
+    step = 1.0 / bins
+    distribution = []
+
+    for i in range(bins):
+        min_edge = round(i * step, 4)
+        max_edge = round((i + 1) * step, 4)
+
+        if i < bins - 1:
+            count = sum(1 for s in scores if min_edge <= s < max_edge)
+        else:
+            count = sum(1 for s in scores if min_edge <= s <= 1.0)
+
+        distribution.append({
+            "bucket": i,
+            "min": min_edge,
+            "max": max_edge,
+            "count": count
+        })
+
+    return {
+        "zone_id": zone_id,
+        "bins": bins,
+        "total_records": len(scores),
+        "distribution": distribution,
+        "cache_key": f"confidence_dist:{zone_id}:bins={bins}"
+    }
