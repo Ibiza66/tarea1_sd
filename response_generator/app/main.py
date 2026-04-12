@@ -1,7 +1,44 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from .loader import load_data
+from .queries import q1_count, q2_area_stats
 
 app = FastAPI()
+
+DATA = load_data()
+
+
+class Q1Request(BaseModel):
+    zone_id: str
+    confidence_min: float = 0.0
+
+
+class Q2Request(BaseModel):
+    zone_id: str
+    confidence_min: float = 0.0
+
 
 @app.get("/")
 def root():
     return {"message": "Response Generator activo"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "zones_loaded": list(DATA.keys())}
+
+
+@app.post("/q1")
+def run_q1(request: Q1Request):
+    try:
+        return q1_count(DATA, request.zone_id, request.confidence_min)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/q2")
+def run_q2(request: Q2Request):
+    try:
+        return q2_area_stats(DATA, request.zone_id, request.confidence_min)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
