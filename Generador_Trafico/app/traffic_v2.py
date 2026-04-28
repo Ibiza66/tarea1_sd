@@ -2,15 +2,18 @@ import requests
 import random
 import time
 import matplotlib.pyplot as plt
+import numpy as np
 
 CACHE_URL = "http://cache-service:8000/query"
 
 zones = ["Z1", "Z2", "Z3", "Z4", "Z5"]
 query_types = ["Q1", "Q2", "Q3", "Q4", "Q5"]
 
-#  contadores
 hits = 0
 misses = 0
+
+x_points = []
+y_points = []
 
 
 def generate_uniform():
@@ -37,50 +40,47 @@ def generate_zipf():
 def run(mode="uniform"):
     global hits, misses
 
-    for _ in range(100):
+    for i in range(100):
 
-        if mode == "zipf":
-            query = generate_zipf()
-        else:
-            query = generate_uniform()
+        query = generate_zipf() if mode == "zipf" else generate_uniform()
 
         try:
             r = requests.post(CACHE_URL, json=query)
             data = r.json()
 
-            print(data)
-
-            #  contar hits/miss
-            if data["source"] == "cache":
+            if data.get("source") == "cache":
                 hits += 1
+                y_points.append(1)
             else:
                 misses += 1
+                y_points.append(0)
 
-        except:
-            print("error")
+            x_points.append(i)
+
+            print(f"{i+1}/100 {r.status_code}")
+
+        except Exception as e:
+            print("error:", e)
 
         time.sleep(0.1)
 
-    print("\nConsultas terminadas")
-    print("Hits:", hits)
-    print("Misses:", misses)
-
-    draw_graph()
+    draw()
 
 
-def draw_graph():
-    labels = ["Hits", "Misses"]
-    values = [hits, misses]
-
+def draw():
     plt.figure()
-    plt.bar(labels, values)
-    plt.xlabel("Tipo")
-    plt.ylabel("Cantidad")
-    plt.title("Rendimiento de la Cache")
+
+    plt.scatter(x_points, y_points, alpha=0.6)
+
+    plt.title(f"Cache performance ({len(x_points)} requests)")
+    plt.xlabel("Request")
+    plt.ylabel("Hit/Miss")
+
+    plt.yticks([0, 1], ["Miss", "Hit"])
 
     plt.savefig("/app/metrics.png")
-    print("Gráfico guardado como metrics.png")
+    print(" gráfico guardado en /app/metrics.png")
 
 
 if __name__ == "__main__":
-    run("uniform")  # cambia a "zipf"
+    run("zipf")

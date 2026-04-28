@@ -4,10 +4,13 @@ import time
 import matplotlib.pyplot as plt
 
 URL = "http://cache-service:8000/query"
-METRICS_URL = "http://cache-service:8000/metrics"
 
 ZONES = ["Z1", "Z2", "Z3", "Z4", "Z5"]
 QUERIES = ["Q1", "Q2", "Q3", "Q4", "Q5"]
+
+# 👇 listas para guardar comportamiento real
+x_points = []
+y_points = []
 
 
 def random_query():
@@ -36,48 +39,50 @@ def random_query():
         }
 
 
-def run(n_requests=100):
+def run(mode="uniform", n_requests=200):
+    print("🚦 Traffic generator iniciado")
+
     for i in range(n_requests):
         payload = random_query()
 
         try:
             r = requests.post(URL, json=payload)
-            print(f"{i+1}/{n_requests}", r.status_code)
+            data = r.json()
+
+            # 👇 registrar comportamiento real
+            if data.get("source") == "cache":
+                y_points.append(1)  # HIT
+            else:
+                y_points.append(0)  # MISS
+
+            x_points.append(i)
+
+            print(f"{i+1}/{n_requests} -> {data.get('source')}")
+
         except Exception as e:
             print("Error:", e)
 
         time.sleep(0.1)
 
-    print("\n Obteniendo métricas...\n")
-    show_metrics()
+    print("\n📊 Generando gráfico...\n")
+    draw()
 
 
-def show_metrics():
-    try:
-        r = requests.get(METRICS_URL)
-        data = r.json()
+def draw():
+    plt.figure()
 
-        hits = data.get("hits", 0)
-        misses = data.get("misses", 0)
+    # 👇 gráfico de puntos (ordenado)
+    plt.scatter(x_points, y_points, alpha=0.6)
 
-        print("Metrics:", data)
+    plt.title("Cache behavior per query (v1)")
+    plt.xlabel("Query index")
+    plt.ylabel("Result")
 
-        plt.figure()
+    plt.yticks([0, 1], ["Miss", "Hit"])
 
-        labels = ["Hits", "Misses"]
-        values = [hits, misses]
-
-        plt.bar(labels, values)
-        plt.title("Cache Performance")
-        plt.xlabel("Type")
-        plt.ylabel("Count")
-
-        plt.savefig("/app/metrics.png")
-        print("Gráfico guardado como metrics.png")
-
-    except Exception as e:
-        print("Error obteniendo métricas:", e)
+    plt.savefig("/app/metrics.png")
+    print("Gráfico guardado en /app/metrics.png")
 
 
 if __name__ == "__main__":
-    run(200)
+    run("uniform")

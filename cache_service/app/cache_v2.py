@@ -1,16 +1,32 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
 import requests
 import hashlib
 import json
 import time
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+
+import matplotlib.pyplot as plt
+import io
+import pickle
 
 app = FastAPI()
 
+POLICY = "LFU"
+
+
+MAX_SIZE = 50 * 1024 * 1024
+TTL = 50  
+
+MAX_LAT_SAMPLES = 500
+
+
 CACHE = OrderedDict()
-MAX_SIZE = 50
-TTL = 30
+FREQ = defaultdict(int)
+
+CACHE_SIZE = 0
 
 metrics = {
     "hits": 0,
@@ -19,7 +35,13 @@ metrics = {
     "latencies": []
 }
 
+traffic_log = []
+
 RESPONSE_GENERATOR_URL = "http://response-generator:8001/query"
+
+
+def get_size(obj):
+    return len(pickle.dumps(obj))
 
 
 class QueryRequest(BaseModel):
@@ -32,48 +54,85 @@ class QueryRequest(BaseModel):
 
 
 def generate_cache_key(request: QueryRequest):
-    request_dict = request.dict()
-    request_str = json.dumps(request_dict, sort_keys=True)
-    return hashlib.md5(request_str.encode()).hexdigest()
+    return hashlib.md5(
+        json.dumps(request.dict(), sort_keys=True).encode()
+    ).hexdigest()
+
+
+def evict():
+    global CACHE, CACHE_SIZE
+
+    if POLICY == "LRU":
+        key, (data, ts) = CACHE.popitem(last=False)
+        CACHE_SIZE -= get_size((data, ts))
+
+    elif POLICY == "LFU":
+        lfu_key = min(FREQ, key=FREQ.get)
+        data = CACHE[lfu_key]
+        CACHE_SIZE -= get_size(data)
+
+        CACHE.pop(lfu_key, None)
+        FREQ.pop(lfu_key, None)
 
 
 @app.post("/query")
 def query(request: QueryRequest):
-    start_time = time.time()
+    global CACHE_SIZE
 
+    start = time.time()
     key = generate_cache_key(request)
 
+    # ---------- HIT ----------
     if key in CACHE:
-        data, timestamp = CACHE[key]
+        data, ts = CACHE[key]
 
-        if time.time() - timestamp < TTL:
-            CACHE.move_to_end(key)
+        if time.time() - ts < TTL:
             metrics["hits"] += 1
-            latency = time.time() - start_time
-            metrics["latencies"].append(latency)
+
+            if POLICY == "LRU":
+                CACHE.move_to_end(key)
+            elif POLICY == "LFU":
+                FREQ[key] += 1
+
+            lat = time.time() - start
+            metrics["latencies"].append(lat)
+
+            traffic_log.append(1)
             return {"source": "cache", "data": data}
 
-        else:
-            del CACHE[key]
+        CACHE.pop(key, None)
+        FREQ.pop(key, None)
 
+  
     metrics["misses"] += 1
 
     try:
-        response = requests.post(RESPONSE_GENERATOR_URL, json=request.dict())
+        response = requests.post(
+            RESPONSE_GENERATOR_URL,
+            json=request.dict()
+        )
 
         if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=response.text)
+            raise HTTPException(status_code=500, detail=response.text)
 
         data = response.json()
+        entry = (data, time.time())
+        entry_size = get_size(entry)
 
-        if len(CACHE) >= MAX_SIZE:
-            CACHE.popitem(last=False)
+        if CACHE_SIZE + entry_size > MAX_SIZE:
+            evict()
             metrics["evictions"] += 1
 
-        CACHE[key] = (data, time.time())
+        CACHE[key] = entry
+        CACHE_SIZE += entry_size
 
-        latency = time.time() - start_time
-        metrics["latencies"].append(latency)
+        if POLICY == "LFU":
+            FREQ[key] = 1
+
+        lat = time.time() - start
+        metrics["latencies"].append(lat)
+
+        traffic_log.append(0)
 
         return {"source": "computed", "data": data}
 
@@ -81,36 +140,66 @@ def query(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
 @app.get("/metrics")
-def get_metrics():
+def metrics_view():
     total = metrics["hits"] + metrics["misses"]
-    hit_rate = metrics["hits"] / total if total > 0 else 0
-
-    latencies = metrics["latencies"]
-    latencies.sort()
-
-    def percentile(p):
-        if not latencies:
-            return 0
-        k = int(len(latencies) * p)
-        return latencies[min(k, len(latencies)-1)]
+    hit_rate = metrics["hits"] / total if total else 0
 
     return {
+        "policy": POLICY,
+        "ttl_seconds": TTL,
+        "cache_size_mb": CACHE_SIZE / (1024 * 1024),
         "hits": metrics["hits"],
         "misses": metrics["misses"],
         "hit_rate": hit_rate,
-        "evictions": metrics["evictions"],
-        "p50_latency": percentile(0.5),
-        "p95_latency": percentile(0.95),
-        "cache_size": len(CACHE)
+        "evictions": metrics["evictions"]
     }
 
 
+
 @app.delete("/cache")
-def clear_cache():
+def clear():
+    global CACHE_SIZE
+
     CACHE.clear()
+    FREQ.clear()
+    CACHE_SIZE = 0
+
     metrics["hits"] = 0
     metrics["misses"] = 0
     metrics["evictions"] = 0
     metrics["latencies"] = []
+    traffic_log.clear()
+
     return {"message": "cache limpiado"}
+
+
+
+@app.get("/plot")
+def plot():
+    if not traffic_log:
+        return {"message": "No hay datos aún"}
+
+    x = list(range(len(traffic_log)))
+    y = traffic_log
+
+    plt.figure()
+    plt.scatter(x, y, alpha=0.6)
+
+    cache_mb = CACHE_SIZE / (1024 * 1024)
+
+    plt.title(
+        f"Cache performance ({POLICY}) | TTL={TTL}s | Size={cache_mb:.2f} MB"
+    )
+
+    plt.xlabel("Request order")
+    plt.ylabel("Hit / Miss")
+    plt.yticks([0, 1], ["Miss", "Hit"])
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    plt.close()
+    buf.seek(0)
+
+    return StreamingResponse(buf, media_type="image/png")
