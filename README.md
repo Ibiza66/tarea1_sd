@@ -2,32 +2,42 @@
 
 ## Descripción
 
-Este proyecto implementa una arquitectura distribuida basada en microservicios para procesar consultas, utilizar caché y generar tráfico de prueba.
+Este proyecto implementa una arquitectura distribuida basada en microservicios para responder consultas, almacenar resultados en caché y generar tráfico automático para evaluar el comportamiento del sistema.
 
-La solución está compuesta por tres servicios:
+La solución está compuesta por tres servicios principales:
 
-- **response-generator**: procesa consultas y entrega resultados.
-- **cache-service**: recibe solicitudes, consulta al generador de respuestas y almacena resultados en caché.
-- **traffic-generator**: automatiza múltiples solicitudes al sistema para medir su comportamiento.
+- **response-generator**: procesa las consultas solicitadas.
+- **cache-service**: almacena respuestas en caché y entrega métricas de rendimiento.
+- **traffic-generator**: genera tráfico automático sobre el sistema y produce gráficos de resultados.
 
-## Arquitectura
+---
+
+## Arquitectura del sistema
 
 El sistema se compone de los siguientes servicios:
 
-1. **response-generator**
-   - Procesa consultas del tipo `Q1`, `Q4` y `Q5`.
-   - Se ejecuta en el puerto **8001**.
+### 1. Response Generator
+Servicio encargado de procesar consultas sobre zonas y devolver resultados.
 
-2. **cache-service**
-   - Expone un endpoint único `POST /query`.
-   - Reenvía consultas al `response-generator` cuando no están en caché.
-   - Almacena respuestas para reutilizarlas.
-   - Se ejecuta en el puerto **8000**.
+- Puerto: `8001`
+- Endpoint de salud: `GET /health`
+- Endpoint principal: `POST /query`
 
-3. **traffic-generator**
-   - Genera tráfico automático contra el sistema.
-   - Envía 100 solicitudes de prueba.
-   - Consulta métricas al finalizar y genera un gráfico `metrics.png`.
+### 2. Cache Service
+Servicio intermedio que consulta al `response-generator`, guarda resultados en caché y expone métricas.
+
+- Puerto: `8000`
+- Swagger: `http://127.0.0.1:8000/docs`
+- Métricas: `http://127.0.0.1:8000/metrics`
+- Gráfico en vivo (v2): `http://127.0.0.1:8000/plot`
+
+### 3. Traffic Generator
+Servicio que envía 100 solicitudes automáticas al sistema para evaluar el comportamiento de la caché.
+
+- Genera tráfico de prueba
+- Guarda un gráfico llamado `metrics.png`
+
+---
 
 ## Estructura del proyecto
 
@@ -36,6 +46,7 @@ tarea1_sd/
 │
 ├── data/
 ├── response_generator/
+│
 ├── cache_service/
 │   ├── app/
 │   ├── docker-compose.yml
