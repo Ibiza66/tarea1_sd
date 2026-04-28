@@ -2,7 +2,6 @@ import requests
 import random
 import time
 import matplotlib.pyplot as plt
-import numpy as np
 
 CACHE_URL = "http://cache-service:8000/query"
 
@@ -16,46 +15,82 @@ x_points = []
 y_points = []
 
 
-def generate_uniform():
-    return {
-        "query_type": random.choice(query_types),
-        "zone_id": random.choice(zones),
-        "confidence_min": random.choice([0.0, 0.5, 0.8]),
-        "bins": 5
-    }
+def build_query_uniform():
+    qt = random.choice(query_types)
+
+    if qt == "Q4":
+        a, b = random.sample(zones, 2)
+        return {
+            "query_type": "Q4",
+            "zone_id_a": a,
+            "zone_id_b": b,
+            "confidence_min": random.choice([0.0, 0.5, 0.8])
+        }
+
+    elif qt == "Q5":
+        return {
+            "query_type": "Q5",
+            "zone_id": random.choice(zones),
+            "bins": 5
+        }
+
+    else:
+        return {
+            "query_type": qt,
+            "zone_id": random.choice(zones),
+            "confidence_min": random.choice([0.0, 0.5, 0.8])
+        }
 
 
-def generate_zipf():
+def build_query_zipf():
     weights = [0.5, 0.2, 0.15, 0.1, 0.05]
-    zone = random.choices(zones, weights=weights)[0]
+    qt = random.choice(query_types)
 
-    return {
-        "query_type": random.choice(query_types),
-        "zone_id": zone,
-        "confidence_min": 0.0,
-        "bins": 5
-    }
+    if qt == "Q4":
+        a = random.choices(zones, weights=weights)[0]
+        restantes = [z for z in zones if z != a]
+        b = random.choice(restantes)
+        return {
+            "query_type": "Q4",
+            "zone_id_a": a,
+            "zone_id_b": b,
+            "confidence_min": 0.0
+        }
+
+    elif qt == "Q5":
+        return {
+            "query_type": "Q5",
+            "zone_id": random.choices(zones, weights=weights)[0],
+            "bins": 5
+        }
+
+    else:
+        return {
+            "query_type": qt,
+            "zone_id": random.choices(zones, weights=weights)[0],
+            "confidence_min": 0.0
+        }
 
 
 def run(mode="uniform"):
     global hits, misses
 
     for i in range(100):
-
-        query = generate_zipf() if mode == "zipf" else generate_uniform()
+        query = build_query_zipf() if mode == "zipf" else build_query_uniform()
 
         try:
             r = requests.post(CACHE_URL, json=query)
             data = r.json()
 
-            if data.get("source") == "cache":
-                hits += 1
-                y_points.append(1)
-            else:
-                misses += 1
-                y_points.append(0)
+            if r.status_code == 200:
+                if data.get("source") == "cache":
+                    hits += 1
+                    y_points.append(1)
+                else:
+                    misses += 1
+                    y_points.append(0)
 
-            x_points.append(i)
+                x_points.append(i)
 
             print(f"{i+1}/100 {r.status_code}")
 
@@ -69,18 +104,14 @@ def run(mode="uniform"):
 
 def draw():
     plt.figure()
-
     plt.scatter(x_points, y_points, alpha=0.6)
-
-    plt.title(f"Cache performance ({len(x_points)} requests)")
-    plt.xlabel("Request")
-    plt.ylabel("Hit/Miss")
-
+    plt.title("Cache performance (Live)")
+    plt.xlabel("Request order")
+    plt.ylabel("Hit / Miss")
     plt.yticks([0, 1], ["Miss", "Hit"])
-
     plt.savefig("/app/metrics.png")
-    print(" gráfico guardado en /app/metrics.png")
+    print("gráfico guardado en /app/metrics.png")
 
 
 if __name__ == "__main__":
-    run("zipf")
+    run("uniform")
